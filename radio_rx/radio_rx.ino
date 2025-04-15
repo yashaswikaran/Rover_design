@@ -22,13 +22,24 @@ void setup() {
 
 void loop() {
   if (nrf24.available()) {
-    uint8_t buf[RH_NRF24_MAX_MESSAGE_LEN];
+    uint8_t buf[3];  // Expecting 3 bytes
     uint8_t len = sizeof(buf);
 
     if (nrf24.recv(buf, &len)) {
-      buf[len] = '\0';  // null-terminate
-      Serial.print("Received: ");
-      Serial.println((char*)buf);
+      if (len == 3) {
+        uint8_t x = buf[0];
+        uint8_t y = buf[1];
+        uint8_t button = buf[2];
+
+        Serial.print("Received -> X: ");
+        Serial.print(x);
+        Serial.print(" | Y: ");
+        Serial.print(y);
+        Serial.print(" | Button: ");
+        Serial.println(button);
+      } else {
+        Serial.println("Unexpected payload size");
+      }
     } else {
       Serial.println("Receive failed");
     }

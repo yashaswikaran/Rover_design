@@ -1,11 +1,11 @@
 #include <SPI.h>
 #include <RH_NRF24.h>
 
-// NRF24L01 Pins
 #define CE_PIN 9
 #define CSN_PIN 10
+#define LED_PIN 13  // For transmission indicator
 
-// Joystick Pins
+// Joystick pins
 #define VRx A0
 #define VRy A1
 #define SW 2
@@ -13,48 +13,50 @@
 RH_NRF24 nrf24(CE_PIN, CSN_PIN);
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(SW, INPUT_PULLUP);
 
-  pinMode(SW, INPUT_PULLUP); // Button with internal pull-up
-
-  if (!nrf24.init()) {
-    Serial.println("NRF24 init failed");
-    while (1); // Stop here
+  // Initialize radio with retries
+  if (!initializeRadio()) {
+    Serial.println("Radio initialization failed!");
+    while(1) { // Blink LED rapidly if failed
+      digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+      delay(100);
+    }
   }
+  Serial.println("Transmitter ready");
+}
 
-  if (!nrf24.setChannel(1))
-    Serial.println("Channel set failed");
-
-  if (!nrf24.setRF(RH_NRF24::DataRate2Mbps, RH_NRF24::TransmitPower0dBm))
-    Serial.println("RF set failed");
-
-  Serial.println("NRF24 Transmitter Ready");
+bool initializeRadio() {
+  if (!nrf24.init()) return false;
+  if (!nrf24.setChannel(1)) return false;
+  if (!nrf24.setRF(RH_NRF24::DataRate250kbps, RH_NRF24::TransmitPower0dBm)) return false;
+  return true;
 }
 
 void loop() {
-  int xValue = analogRead(VRx);  // X-axis
-  int yValue = analogRead(VRy);  // Y-axis
-  int buttonState = digitalRead(SW); // LOW = pressed
+  uint8_t payload[3] = {
+    map(analogRead(VRx), 0, 1023, 0, 255),
+    map(analogRead(VRy), 0, 1023, 0, 255),
+    digitalRead(SW) == LOW ? 1 : 0
+  };
 
-  // Optional: Map to 0–255
-  uint8_t xMapped = map(xValue, 0, 1023, 0, 255);
-  uint8_t yMapped = map(yValue, 0, 1023, 0, 255);
-  uint8_t button = (buttonState == LOW) ? 1 : 0;
+  Serial.print("Sending: X=");
+  Serial.print(payload[0]);
+  Serial.print(" Y=");
+  Serial.print(payload[1]);
+  Serial.print(" BTN=");
+  Serial.println(payload[2]);
 
-  // Prepare payload: 3 bytes
-  uint8_t payload[3] = { xMapped, yMapped, button };
+  if (nrf24.send(payload, sizeof(payload))) {
+    nrf24.waitPacketSent();
+    digitalWrite(LED_PIN, HIGH);  // Transmission indicator
+    delay(10);
+    digitalWrite(LED_PIN, LOW);
+  } else {
+    Serial.println("Send failed!");
+  }
 
-  // Debug print
-  Serial.print("Sending -> X: ");
-  Serial.print(xMapped);
-  Serial.print(" | Y: ");
-  Serial.print(yMapped);
-  Serial.print(" | Button: ");
-  Serial.println(button);
-
-  // Send data
-  nrf24.send(payload, sizeof(payload));
-  nrf24.waitPacketSent();
-
-  delay(100); // Smooth transmission rate
+  delay(50);  // 20Hz update rate
 }
